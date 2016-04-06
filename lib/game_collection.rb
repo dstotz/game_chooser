@@ -8,9 +8,8 @@ class GameCollection
 
   attr_reader :username, :include_expansions, :collection, :game_collection
 
-  def initialize(username: nil, percent: nil)
+  def initialize(username: nil)
     @username = username
-    @percent = percent
     @game_collection = {}
     find_games
   end

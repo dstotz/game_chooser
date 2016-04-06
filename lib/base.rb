@@ -1,4 +1,5 @@
-require "open-uri"
+require 'open-uri'
+require 'bgg'
 
 def fetch_collection(refresh: false)
   filename = "./tmp/#{@username}.yml"
@@ -8,6 +9,7 @@ def fetch_collection(refresh: false)
     collection = refresh_collection
     backup_collection(filename, collection) if collection
   end
+  @list_builder = ListBuilder.new(collection)
   collection
 end
 
@@ -21,6 +23,7 @@ def refresh_games
   if confirm("Would you like to refresh your collection?\nThis can take a few minutes")
     LOG.info 'Refreshing collection'
     @collection = GameCollection.new(username: @username).game_collection
+    @list_builder = ListBuilder.new(@collection)
     LOG.info 'Refresh complete'
   end
 end
@@ -86,11 +89,19 @@ end
 
 def filter_games
   @num_players = @number_of_players_list.text.to_i
-  alert "Must select number of players" if @num_players.nil? || @num_players == 0
   @gameplay_time = @gameplay_time_list.text
-  @games = GameFilter.new(collection: @collection, num_players: @num_players, max_gameplay_time: @gameplay_time)
+  @category = @category_list.text
+  @mechanic = @mechanic_list.text
+  @games = GameFilter.new(
+    collection: @collection,
+    num_players: @num_players,
+    max_gameplay_time: @gameplay_time,
+    mechanic: @mechanic,
+    category: @category
+  )
   @game_chooser = GameChooser.new(@games.games)
   update_filter_text
+  ensure_all_games_images_removed
   set_default_image
 end
 
@@ -129,16 +140,43 @@ def ensure_all_games_images_removed
   end
 end
 
+def validate_username
+  return true if File.exists?("./tmp/#{@username}.yml")
+  begin
+    return true if Bgg::User.find_by_name(@username)
+  rescue
+  end
+  alert("Unable to find BGG username #{@username}.\nPlease try again.")
+  false
+end
+
+def handle_initial_connection_button_press
+  @username = @username_line.text
+  if validate_username
+    @collection = fetch_collection
+    @post_connection_flow.show
+    @connect_button.hide
+    filter_games
+    @category_list.items = ['Any'] + @list_builder.categories
+    @category_list.choose = 'Any'
+    @mechanic_list.items = ['Any'] + @list_builder.mechanics
+    @mechanic_list.choose = 'Any'
+  end
+
+end
+
 def handle_show_all_button_press
   if @collection.nil?
     alert("You must do Choose Game first")
     return
   end
+  ensure_all_games_images_removed
   filter_games
   @game_image.hide; @game_text.hide
   @game_tag_line.text = 'Here are all of the available games!'
-  @all_game_stack = stack(top: '450px') do
-    @game_chooser.games.each do |name, game|
+  @all_game_stack = stack(top: '435px') do
+    sorted_games = @game_chooser.games.sort
+    sorted_games.each do |name, game|
       flow do
         image_path = local_image_file(game[:image]) || game[:image]
         width, height = resize_image(image: image_path)
